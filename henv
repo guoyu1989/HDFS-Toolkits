@@ -1,0 +1,174 @@
+#!/bin/bash
+###############################################################################
+## Bash Autocompletion for HDFS
+# hdfs(1) completion 
+# taken from: http://blog.rapleaf.com/dev/2009/11/17/command-line-auto-completion-for-hadoop-dfs-commands/
+
+have()
+{
+	unset -v have
+	PATH=$PATH:/sbin:/usr/sbin:/usr/local/sbin type $1 &>/dev/null &&
+		have="yes"
+}
+
+#
+_hdfs()
+{
+	local cur prev
+
+	COMPREPLY=()
+	cur=${COMP_WORDS[COMP_CWORD]}
+	prev=${COMP_WORDS[COMP_CWORD-1]}
+
+	if [[ "$prev" == hadoop ]]; then
+		COMPREPLY=( $( compgen -W 'namenode secondarynamenode namenode \
+			datanode dfsadmin fsck balancer jmxget oiv fetchdt dfs' -- $cur ) )
+	fi
+
+	if [[ "$prev" == namenode ]]; then
+		COMPREPLY=( $( compgen -W '-format' -- $cur ) )
+	fi
+
+	if [[ "$prev" == dfs ]]; then
+		COMPREPLY=( $( compgen -W '-ls -lsr -du -dus -count -mv -cp -rm \
+			-rmr -expunge -put -copyFromLocal -moveToLocal -mkdir -setrep \
+			-touchz -test -stat -tail -chmod -chown -chgrp -help' -- $cur ) )
+	fi
+
+	if [[ "$prev" == -ls ]] || [[ "$prev" == -lsr ]] || \
+		[[ "$prev" == -du ]] || [[ "$prev" == -dus ]] || \
+		[[ "$prev" == -cat ]] || [[ "$prev" == -mkdir ]] || \
+		[[ "$prev" == -put ]] || [[ "$prev" == -rm ]] || \
+		[[ "$prev" == -rmr ]] || [[ "$prev" == -tail ]] || \
+		[[ "$prev" == -cp ]]; then
+		if [[ -z "$cur" ]]; then
+			COMPREPLY=( $( compgen -W "$( $HDFS_COMM dfs -ls / 2> /dev/null |grep -v ^Found|awk '{print $8}' )" -- "$cur" ) )
+		elif [[ `echo $cur | grep \/$` ]]; then
+			COMPREPLY=( $( compgen -W "$( $HDFS_COMM dfs -ls $cur 2> /dev/null |grep -v ^Found|awk '{print $8}' )" -- "$cur" ) )
+		else
+			COMPREPLY=( $( compgen -W "$( $HDFS_COMM dfs -ls $cur* 2> /dev/null |grep -v ^Found|awk '{print $8}' )" -- "$cur" ) )
+		fi
+	fi
+
+}
+have hadoop && complete -F _hdfs hdfs
+
+
+#
+_hdfs_cli_common()
+{
+	#
+	HDFS_NAME=$(hpwd -p)
+	HDFS_PWD=$(hpwd -r)
+	X=${#HDFS_PWD}
+    # additional offset needed to clip "/HDFS_PWD/..." from results
+	[[ $X > 0 ]] && X=$(( X + 2 )) 
+    # when CWD equals ROOT
+	[ "$PWD" = "$HDFS_PREFIX" ] && X=$(( X + 1 ))
+	if [[ -z "$cur" ]]; then
+		COMPREPLY=( $( compgen -W "$( $HDFS_COMM dfs -ls "$HDFS_NAME"/"$HDFS_PWD" 2> /dev/null |grep -v ^Found|awk -v X=$X '{s=substr($8,1+X); print s}' )" -- "$cur" ) )
+	elif [[ `echo $cur | grep \/$` ]]; then
+		COMPREPLY=( $( compgen -W "$( $HDFS_COMM dfs -ls "$HDFS_NAME"/"$HDFS_PWD"/"$cur" 2> /dev/null |grep -v ^Found|awk -v X=$X '{s=substr($8,1+X); print s}' )" -- "$cur" ) )
+	else
+		COMPREPLY=( $( compgen -W "$( $HDFS_COMM dfs -ls "$HDFS_NAME"/"$HDFS_PWD"/"$cur"* 2> /dev/null |grep -v ^Found|awk -v X=$X '{s=substr($8,1+X); print s}' )" -- "$cur" ) )
+	fi
+	unset HDFS_NAME
+	unset HDFS_PWD
+}
+
+_hdfs_cli_ls()
+{
+	local cur prev
+
+	COMPREPLY=()
+	cur=${COMP_WORDS[COMP_CWORD]}
+	prev=${COMP_WORDS[COMP_CWORD-1]}
+
+	case "$cur" in 
+		-*) COMPREPLY=( $( compgen -W '-r -v -h' -- $cur ) ); return 0;;
+	esac
+    echo $COMPREPLY
+	_hdfs_cli_common
+}
+
+_hdfs_cli_get()
+{
+	local cur prev
+
+	COMPREPLY=()
+	cur=${COMP_WORDS[COMP_CWORD]}
+	prev=${COMP_WORDS[COMP_CWORD-1]}
+
+	case "$cur" in 
+		-*) COMPREPLY=( $( compgen -W '-p -f -v -h' -- $cur ) ); return 0;;
+	esac
+	_hdfs_cli_common
+}
+
+_hdfs_cli_put()
+{
+	local cur prev
+
+	COMPREPLY=()
+	cur=${COMP_WORDS[COMP_CWORD]}
+	prev=${COMP_WORDS[COMP_CWORD-1]}
+
+	case "$cur" in 
+		-*) COMPREPLY=( $( compgen -W '-v -f -h' -- $cur ) ); return 0;;
+	esac
+
+    #
+    HDFS_PWD=$(hpwd -r)
+    HDFS_PWD=${HDFS_PWD#/}
+    LOCAL_PREFIX="$HDFS_PREFIX"/"$HDFS_PWD"
+    LOCAL_PREFIX=${LOCAL_PREFIX%/}
+
+    X=${#LOCAL_PREFIX}
+    Y=${PWD#$HDFS_PREFIX}
+    LY=${#Y}
+    LPWD=${#PWD}
+    # additional offset needed to clip "/LOCAL_PREFIX/..." from results
+    (( LY < LPWD )) && (( LY > 0 )) && X=$(( X + 1 )) 
+    # when CWD equals ROOT
+    [ "$PWD" = "$HDFS_PREFIX" ] && X=$(( X + 1 ))
+
+	#echo .. "$LOCAL_PREFIX"
+    mcur=${cur#/}
+	if [[ -z "$mcur" ]]; then
+		COMPREPLY=( $( compgen -W "$( /bin/ls -dF "$LOCAL_PREFIX"/* 2> /dev/null |awk -v X=$X '{s=substr($1,1+X); print s}' )" -- "$cur" ) )
+	elif [[ `echo $mcur | grep \/$` ]]; then
+		COMPREPLY=( $( compgen -W "$( /bin/ls -dF "$LOCAL_PREFIX"/"$mcur"* 2> /dev/null |awk -v X=$X '{s=substr($1,1+X); print s}' )" -- "$cur" ) )
+	else
+		COMPREPLY=( $( compgen -W "$( /bin/ls -dF "$LOCAL_PREFIX"/"$mcur"* 2> /dev/null |awk -v X=$X '{s=substr($1,1+X); print s}' )" -- "$cur" ) )
+	fi
+	unset LOCAL_PREFIX
+    unset HDFS_PWD
+    unset X
+    unset Y
+    unset LY
+    unset LPWD
+    unset mcur
+}
+
+_hdfs_cli_pwd()
+{
+	local cur prev
+
+	COMPREPLY=()
+	cur=${COMP_WORDS[COMP_CWORD]}
+	prev=${COMP_WORDS[COMP_CWORD-1]}
+
+	case "$cur" in 
+		-*) COMPREPLY=( $( compgen -W '-r -p -h' -- $cur ) ); return 0;;
+	esac
+}
+
+have hadoop && complete -F _hdfs_cli_ls hls
+have hadoop && complete -F _hdfs_cli_get hget
+have hadoop && complete -F _hdfs_cli_put hput
+have hadoop && complete -F _hdfs_cli_pwd hpwd
+
+unset have
+
+
+# -o bashdefault -o default
